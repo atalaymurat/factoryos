@@ -1,32 +1,14 @@
 const { pool } = require("../services/db.service");
-const { publishAsync, isReady } = require("../services/mqtt.service");
+const { publishAsync } = require("../services/mqtt.service");
+const { config } = require("../config/env");
 
-// Retry tükenince event 'failed' olur. Bu noktadan sonra manuel müdahale gerekir
-// (DLQ dashboard, admin endpoint vs. — Faz 2 işi).
-const MAX_ATTEMPTS = 5;
+let intervalHandle = null;
+let isStopping = false;
+let currentRun = null;
 
-// Her polling döngüsünde worker kaç event claim'leyecek.
-// Çok yüksek: tek worker uzun süre lock tutar, diğer worker'lar bekler.
-// Çok düşük: throughput düşer.
-// 10 iyi bir başlangıç; metrik gelince ayarlarız.
-const BATCH_SIZE = 10;
-
-/**
- * Outbox worker — pending event'leri claim'leyip MQTT'ye publish eder.
- *
- * Concurrency modeli:
- *   - FOR UPDATE SKIP LOCKED: iki worker aynı satırı pickup etmez. Birinin lock
- *     aldığı satırları diğeri "skip" eder, pending'ler arasından sonrakini alır.
- *   - Transaction scope: SELECT → publish → UPDATE hepsi tek transaction'da.
- *     Publish sırasında process ölürse satır tekrar pending'e dönüyor (rollback),
- *     başka worker pickup edebiliyor.
- *
- * Retry modeli:
- *   - Publish başarısız olursa attempts++ ve status='pending' kalır → bir sonraki
- *     polling'de tekrar denenir.
- *   - attempts >= MAX_ATTEMPTS olduğunda status='failed' olur, ring'den çıkar.
- */
 async function processEvents() {
+  if (isStopping) return;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -40,7 +22,7 @@ async function processEvents() {
       LIMIT $1
       FOR UPDATE SKIP LOCKED
       `,
-      [BATCH_SIZE]
+      [config.WORKER_BATCH_SIZE]
     );
 
     if (rows.length === 0) {
@@ -66,19 +48,18 @@ async function processEvents() {
         console.log("Worker published:", event.id, "→", event.topic);
       } catch (err) {
         const nextAttempts = event.attempts + 1;
-        const nextStatus = nextAttempts >= MAX_ATTEMPTS ? "failed" : "pending";
+        const nextStatus =
+          nextAttempts >= config.WORKER_MAX_ATTEMPTS ? "failed" : "pending";
 
         await client.query(
           `UPDATE events
-           SET attempts = $2,
-               status = $3,
-               error_message = $4
+           SET attempts = $2, status = $3, error_message = $4
            WHERE id = $1`,
           [event.id, nextAttempts, nextStatus, err.message]
         );
 
         console.error(
-          `Worker publish failed (attempt ${nextAttempts}/${MAX_ATTEMPTS}):`,
+          `Worker publish failed (attempt ${nextAttempts}/${config.WORKER_MAX_ATTEMPTS}):`,
           event.id,
           "-",
           err.message
@@ -88,26 +69,42 @@ async function processEvents() {
 
     await client.query("COMMIT");
   } catch (err) {
-    // Transaction bazlı hata (connection koptu, deadlock vs.)
-    // Satırlar rollback olur, sonraki polling'de tekrar denenir.
-    try {
-      await client.query("ROLLBACK");
-    } catch (_) { /* connection zaten ölü olabilir */ }
+    try { await client.query("ROLLBACK"); } catch (_) {}
     console.error("Worker loop error:", err.message);
   } finally {
     client.release();
   }
 }
 
-/**
- * 5 saniyede bir polling.
- * Adım 5'te LISTEN/NOTIFY eklenince bu sadece fallback olacak (30sn'ye çekebiliriz).
- */
 function startWorker() {
-  setInterval(processEvents, 5000);
-  console.log("Event worker started");
+  // Wrapper: çalışan bir run varsa await'i takip edebilelim (stop için)
+  const tick = async () => {
+    currentRun = processEvents();
+    try { await currentRun; } finally { currentRun = null; }
+  };
+
+  intervalHandle = setInterval(tick, config.WORKER_POLL_INTERVAL_MS);
+  console.log(
+    `Event worker started (poll=${config.WORKER_POLL_INTERVAL_MS}ms, batch=${config.WORKER_BATCH_SIZE}, maxAttempts=${config.WORKER_MAX_ATTEMPTS})`
+  );
+}
+
+/**
+ * Graceful shutdown: yeni tick'leri durdur, devam eden run'un bitmesini bekle.
+ * Transaction COMMIT/ROLLBACK tamamlansın diye önemli — yoksa pending olarak
+ * kalan ama aslında publish edilmiş event'ler oluşabilir.
+ */
+async function stopWorker() {
+  isStopping = true;
+  if (intervalHandle) clearInterval(intervalHandle);
+  if (currentRun) {
+    console.log("Worker: waiting for current batch to finish...");
+    try { await currentRun; } catch (_) {}
+  }
+  console.log("Worker stopped");
 }
 
 module.exports = {
   startWorker,
+  stopWorker,
 };
