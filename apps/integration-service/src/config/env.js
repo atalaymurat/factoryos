@@ -19,6 +19,7 @@ const optional = {
   WORKER_POLL_INTERVAL_MS: "5000",
   WORKER_BATCH_SIZE: "10",
   WORKER_MAX_ATTEMPTS: "5",
+  ERPNEXT_WEBHOOK_SECRET: "", 
 };
 
 function loadConfig() {
@@ -51,6 +52,7 @@ function loadConfig() {
       process.env.WORKER_MAX_ATTEMPTS || optional.WORKER_MAX_ATTEMPTS,
       10
     ),
+    ERPNEXT_WEBHOOK_SECRET: process.env.ERPNEXT_WEBHOOK_SECRET || "",
   };
 
   // Sanity check — parse sonrası NaN'lar

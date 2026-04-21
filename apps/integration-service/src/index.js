@@ -6,7 +6,12 @@ const { closeDb } = require("./services/db.service");
 const { closeMqtt } = require("./services/mqtt.service");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
+
 
 app.use("/", webhookRoutes);
 
