@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: factoryos-postgres
+    restart: always
+    env_file:
+      - ./config/env/common.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./storage/postgres:/var/lib/postgresql/data
+
+  emqx:
+    image: emqx/emqx:latest
+    container_name: factoryos-emqx
+    restart: always
+    ports:
+      - "1883:1883"
+      - "${EMQX_DASHBOARD_PORT}:18083"
+
+  integration-service:
+    image: node:20
+    container_name: factoryos-integration
+    restart: always
+    working_dir: /app
+    env_file:
+      - ./config/env/common.env
+    volumes:
+      - ./apps/integration-service:/app
+    command: ["sh", "-c", "npm install && node src/index.js"]
+    ports:
+      - "${INTEGRATION_PORT}:3000"
+    depends_on:
+      - postgres
+      - emqx
