@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   postgres:
@@ -11,6 +10,12 @@ services:
       - "5432:5432"
     volumes:
       - ./storage/postgres:/var/lib/postgresql/data
+      - ./apps/integration-service/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U factoryos -d factoryos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   emqx:
     image: emqx/emqx:latest
@@ -19,12 +24,20 @@ services:
     ports:
       - "1883:1883"
       - "${EMQX_DASHBOARD_PORT}:18083"
-
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+  
   integration-service:
     image: node:20
     container_name: factoryos-integration
     restart: always
     working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_started
     env_file:
       - ./config/env/common.env
     volumes:
@@ -32,6 +45,7 @@ services:
     command: ["sh", "-c", "npm install && node src/index.js"]
     ports:
       - "${INTEGRATION_PORT}:3000"
-    depends_on:
-      - postgres
-      - emqx
+
+volumes:
+  emqx-data:
+  emqx-log:
