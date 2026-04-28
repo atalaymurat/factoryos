@@ -4,9 +4,14 @@ import { logger } from "../../../lib/logger.js";
 import type { ContractSubModule } from "./sub_modules.js";
 import { buildPartOperations, type ContractOperation } from "./_route.js";
 import { attachProgramsToOperations, type ContractProgram } from "./_programs.js";
+import {
+  buildMachiningFeatures,
+  type ContractMachiningFeature,
+} from "./_machining_features.js";
 
 export type { ContractOperation } from "./_route.js";
 export type { ContractProgram } from "./_programs.js";
+export type { ContractMachiningFeature } from "./_machining_features.js";
 
 /**
  * IMOS Type 3 (manufactured) + Type 8 (hardware) → Part Contract v2 parts[].
@@ -65,6 +70,9 @@ export interface ContractPart {
   // Rotada listelenmemiş ama IMOS'un CNC dosyası ürettiği makinelere ait
   // programlar. Alternatif makine adayları olabilir (saha kararı).
   programs_unmatched: ContractProgram[];
+  // CNC geometri detayları (oluk, delik, cep koordinatları). MVP'de saklanır
+  // kullanılmaz — Phase 2 makine entegrasyonunda CNC doğrulaması için.
+  machining_features: ContractMachiningFeature[];
   flags: { cut: boolean; cnc: boolean; include_in_bom: boolean };
   // Sadece purchased_stock'ta dolu; mfg part'ta null.
   supplier: ContractPartSupplier | null;
@@ -192,6 +200,8 @@ function transform(
     edges: partType === "manufactured" ? buildEdges(part) : [],
     operations,
     programs_unmatched: programsUnmatched,
+    machining_features:
+      partType === "manufactured" ? buildMachiningFeatures(part) : [],
     flags: {
       cut: parseFlag(part.CutFlag),
       cnc: parseFlag(part.CncFlag),

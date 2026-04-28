@@ -16,7 +16,8 @@
     "migrate:down": "node --env-file=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js down --database-url-var DB_URL",
     "migrate:create": "node --env-file=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js create --database-url-var DB_URL -j sql",
     "db:types": "kysely-codegen --env-file=.env --url='env(DB_URL)' --dialect=postgres --default-schema=mes --exclude-pattern='public.*' --out-file=src/db/types.generated.ts",
-    "imos:parse": "tsx src/adapters/imos/dev-cli.ts"
+    "imos:parse": "tsx src/adapters/imos/dev-cli.ts",
+    "imos:check": "tsx src/adapters/imos/check-cli.ts"
   },
   "keywords": [
     "factoryos",
