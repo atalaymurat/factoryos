@@ -65,6 +65,49 @@
 
 MVP'de inbound öncelikli. Outbound (ERPNext'e geri yazma) Faz 2.
 
+### MES Catalog Authority
+
+MES is the canonical source for the **machine** and **station** catalogs. These are factory-specific configuration: when MES is installed for a customer, the customer's machines and stations are entered into MES once, and those codes are handed to the external system (IMOS, Cabinet Vision, etc.) so its export uses them as-is.
+
+**The adapter therefore does NOT:**
+- Derive a machine list or station list from external export data
+- Create new `mes.machines` or `mes.stations` rows during import
+- Treat the external system as a source of truth for any catalog entity owned by MES
+
+**The adapter DOES:**
+- Reference machine codes (e.g. from IMOS `ProductionRoute` and `program.MachineID`) as foreign-key references to `mes.machines.code`
+- At import time, validate every referenced machine/station code exists in the MES catalog — unknown codes → reject the import with an error listing them
+- Same principle applies to other configuration catalogs MES owns (operators, supervisors, etc.)
+
+**Counter-examples — these stay in the adapter's output and ARE created by import:**
+- `materials` and `edge_bands`: these vary per job (a new project can introduce a new material), so the adapter extracts them from the export and the import upserts them into `mes.materials` / `mes.edge_bands`.
+- `projects`, `modules`, `sub_modules`, `parts`, `work_orders`: these are job data, always created from the export.
+
+The dividing line: **does this entity describe the factory's permanent setup, or the contents of a specific job?** Permanent setup is MES-authoritative; per-job content comes from the adapter.
+
+#### Initial Bootstrap (the exception)
+
+Catalogs (`mes.machines`, `mes.stations`) have to be filled in **once**, at install time. To avoid hand-typing dozens of machine codes, FactoryOS ships a one-shot bootstrap CLI that reads a representative IMOS export and seeds the catalog from it:
+
+```bash
+npm run bootstrap:catalog -- <imos-sample-export.json>
+```
+
+**Why IMOS export as the source:** the customer's IMOS installation already has their machines configured with codes (e.g. `10303_BHX560`). Those same codes will appear in every subsequent production export, so seeding MES from one of those exports guarantees the codes match from day one — no manual transcription, no drift.
+
+**What it does:**
+- Reads machine codes from `ProductionRoute` tokens and `program.MachineID` across all parts → unique set
+- Maps each machine model prefix (`BHN`, `ETQ`, `BHX`, `MLK`, `JP_DH`, …) to a station type (cutting, banding, cnc, …) using the table below
+- Inserts into `mes.machines` (and creates one `mes.station` row per distinct station_type if absent)
+- **Idempotent:** re-running on the same or a different sample only adds new codes; existing rows untouched
+
+**What it is NOT:**
+- Not part of the production import path
+- Not run automatically on each export
+- After bootstrap, the catalog is human-edited via the MES supervisor UI; subsequent IMOS exports never modify it (only reference it via FK validation)
+
+If a customer adds a machine later, they edit it in MES first and tell IMOS the new code — never the other way around.
+
 ### Adapter Türleri
 
 | Tür | Tetiklenme | Örnek |

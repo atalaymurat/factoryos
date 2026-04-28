@@ -15,7 +15,6 @@
 
 - ✅ **`sub_modules[]` top-level liste eklendi** — IMOS Assembly seviyesi
 - ✅ **`materials[]` ve `edge_bands[]` top-level liste eklendi** — deduplicate, tedarikçi bilgileri ile
-- ✅ **`machines[]` top-level liste eklendi** — opsiyonel, kaynak biliyorsa verir
 - ✅ **`parts[]` tek liste oldu** — `part_type` ile manufactured/hardware ayrımı
 - ✅ **Cutting vs Final dimensions** — ikisi ayrı
 - ✅ **Multi-barcode** — primary + operation_barcodes
@@ -30,9 +29,10 @@
 
 1. **Granülarite: Orta seviye.** Proje üst bilgi + entity listeleri düz. Hiyerarşi ID referanslarıyla kurulur.
 2. **Kapsam: Ürün yapısı + iş emri birlikte.** Atomic import.
-3. **Normalize edilmiş entity'ler.** Materials, edge_bands, machines top-level — parts bunlara ID ile referans verir.
-4. **Versiyonlu.** `contract_version` zorunlu.
-5. **IMOS-compatible ama vendor-agnostic.** IMOS gerçeği referans alındı, ama Cabinet Vision/diğerleri de aynı yapıya uyar.
+3. **Normalize edilmiş entity'ler.** Materials, edge_bands top-level — parts bunlara ID ile referans verir.
+4. **MES catalog authority.** Machines and stations are MES-owned configuration; they are NOT carried in this contract. Operations reference them by code (e.g. `preferred_machine_code`) and the import validates each code exists in `mes.machines` / `mes.stations`. See `adapters-reference.md` § "MES Catalog Authority".
+5. **Versiyonlu.** `contract_version` zorunlu.
+6. **IMOS-compatible ama vendor-agnostic.** IMOS gerçeği referans alındı, ama Cabinet Vision/diğerleri de aynı yapıya uyar.
 
 ---
 
@@ -50,7 +50,6 @@
 
   "materials": [ ... ],       // deduplicate, global
   "edge_bands": [ ... ],      // deduplicate, global
-  "machines": [ ... ],        // opsiyonel, kaynak biliyorsa
 
   "modules": [ ... ],
   "sub_modules": [ ... ],
@@ -126,27 +125,6 @@
       "color": "White",
       "thickness_mm": 0.8,
       "geometry": "PG_RTB0p5"
-    }
-  ],
-
-  "machines": [
-    {
-      "code": "10106_BHN510",
-      "model": "BHN510",
-      "machine_type": "panel_saw",
-      "station_code": "STA-CUTTING-01"
-    },
-    {
-      "code": "10303_BHX560",
-      "model": "BHX560",
-      "machine_type": "cnc_router",
-      "station_code": "STA-CNC-01"
-    },
-    {
-      "code": "10202_ETQ810",
-      "model": "ETQ810",
-      "machine_type": "edge_bander",
-      "station_code": "STA-BANDING-01"
     }
   ],
 
@@ -414,17 +392,6 @@
 | `geometry` | string | ✗ | Kesim geometrisi kodu (IMOS'tan) |
 | `supplier` | object | ✗ | `{ name, purchase_order_number, price }` |
 
-### machines[]
-
-Kaynak sistem makinelerini biliyorsa gönderir. MES envantere ekler veya mevcut envanterdeki koda eşler.
-
-| Alan | Tip | Zorunlu | Açıklama |
-|---|---|---|---|
-| `code` | string | ✓ | Makine kodu (IMOS "10303_BHX560") |
-| `model` | string | ✗ | Model adı ("BHX560") |
-| `machine_type` | enum | ✗ | "panel_saw", "edge_bander", "cnc_router", "cnc_drill", "manual_station", "generic" |
-| `station_code` | string | ✗ | Hangi istasyona bağlı — MES tarafında referans |
-
 ### modules[]
 
 | Alan | Tip | Zorunlu | Açıklama |
@@ -624,7 +591,8 @@ Contract MES'e geldiğinde şu kontrollerden geçer. Hata varsa **tüm import re
    - `part.sub_module_code` (varsa) sub_modules[] içinde var mı
    - Her `part.material_code` (manufactured) materials[] içinde var mı
    - Her `edges[].edge_band_code` edge_bands[] içinde var mı
-   - `operations[].preferred_machine_code` machines[] içinde var mı (eğer machines[] verildiyse)
+   - Her `operations[].preferred_machine_code` ve `alternative_machine_codes[]` MES catalog'da (`mes.machines.code`) var mı — bilinmeyen kodda import reject (MES is authoritative; see `adapters-reference.md` § "MES Catalog Authority")
+   - Aynı şekilde `parts[].current_station_code` (varsa) `mes.stations.code` içinde var mı
 5. **Operation sequence** — aynı parça için sequence sıralı ve unique
 6. **Part type consistency:**
    - `manufactured` → material_code + dimensions.cutting + dimensions.final dolu
