@@ -3,12 +3,19 @@ import { sql } from "kysely";
 import { env } from "./config/env.js";
 import { logger } from "./lib/logger.js";
 import { db, pool } from "./db/client.js";
+import { importContractRouter } from "./routes/import-contract.js";
 
 const app = express();
+
+// IMOS export'u 5-10MB seviyesinde JSON body olabiliyor; 16MB güvenli üst sınır.
+// Üstüne çıkan istek 413 alır — saha gerçeği: tek WO bu sınırı aşmaz.
+app.use(express.json({ limit: "16mb" }));
 
 app.get("/", (_req, res) => {
   res.json({ service: "factoryos-api", status: "ok" });
 });
+
+app.use(importContractRouter);
 
 // Liveness — process ayakta mı? Sadece event loop sağlığını söyler.
 // DB veya dış bağımlılık kontrolü YOK; orchestrator container'ı
