@@ -26,8 +26,6 @@ import {
  * Defense in depth: schema parse zaten adapter exit'inde de çalışıyor
  * (parseImosContract). Burada tekrar uygulanır çünkü manuel CSV upload veya
  * doğrudan POST gibi adapter'sız yollar da var.
- *
- * Şu an Adım 1: body validation only. FK/insert/idempotency sonraki adımlarda.
  */
 
 export const importContractRouter = Router();
@@ -142,7 +140,6 @@ importContractRouter.post(
         project_id: result.project_id,
         counts: result.counts,
         machine_codes_validated: referenced.size,
-        note: "Adım 3 only: project + work_order. Materials/modules/parts persistence Adım 4-5'te.",
       });
     } catch (err) {
       if (err instanceof DuplicateWorkOrderError) {
